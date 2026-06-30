@@ -1,5 +1,5 @@
 import { Socket } from "socket.io";
-import type { IceCandidatePayload, User } from "./userManager.js";
+import type { IceCandidatePayload, User } from "./UserManager.js";
 
 let GLOBAL_ROOM_ID = 1;
 
@@ -22,6 +22,7 @@ export class RoomManager {
       user2
     });
 
+    console.log("created room", roomId);
     user1.socket.emit("send-offer", {
       roomId
     });
@@ -32,7 +33,7 @@ export class RoomManager {
     if (!room) return;
 
     const targetUser = room.user1.socket.id === senderSocketId ? room.user2 : room.user1;
-
+    console.log("Got offer");
     targetUser?.socket.emit("offer", {
       sdp,
       roomId
@@ -45,6 +46,7 @@ export class RoomManager {
     if (!room) return;
 
     const targetUser = room.user1.socket.id === senderSocketId ? room.user2 : room.user1;
+    console.log("Got answer");
     targetUser?.socket.emit("answer", {
       sdp,
       roomId
@@ -59,7 +61,7 @@ export class RoomManager {
     for (const [roomId, room] of this.rooms.entries()) {
       if (room.user1.socket.id === socketId || room.user2.socket.id == socketId) {
         const partner = room.user1.socket.id === socketId ? room.user2 : room.user1;
-
+        console.log("Lobby disconnected");
         partner.socket.emit("lobby-disconnected");
 
         this.rooms.delete(roomId);
@@ -73,6 +75,7 @@ export class RoomManager {
     if (!room) return;
 
     const targetUser = room.user1.socket.id == socketId ? room.user2 : room.user1;
+    console.log("candidate iced");
     // forward the ICE candidate directly to peer
     targetUser.socket.emit("ice-candidate", {
       candidate,

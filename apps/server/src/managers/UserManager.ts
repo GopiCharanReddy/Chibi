@@ -1,5 +1,5 @@
 import type { Socket } from "socket.io";
-import { RoomManager } from "./roomManager.js";
+import { RoomManager } from "./RoomManager.js";
 
 export interface User {
   name: string,
@@ -24,7 +24,7 @@ export class UserManager {
     this.roomManager = new RoomManager();
   }
 
-  addUser({ name, socket }: User) {
+  addUser(name: string, socket: Socket) {
     this.users.push({
       name,
       socket
@@ -46,6 +46,8 @@ export class UserManager {
   }
 
   clearQueue() {
+    console.log('inside clear queues');
+    console.log(this.queue.length);
     if (this.queue.length < 2) return;
 
     const id1 = this.queue.shift();
@@ -55,6 +57,7 @@ export class UserManager {
 
     const user1 = this.getUser(id1);
     const user2 = this.getUser(id2);
+
     if (!user1 || !user2) {
       if (user1) this.queue.unshift(id1);
       if (user2) this.queue.unshift(id2);
@@ -65,11 +68,11 @@ export class UserManager {
 
   initHandlers(socket: Socket) {
     socket.on("offer", ({ sdp, roomId }: { sdp: string, roomId: string }) => {
-      this.roomManager.onOffer(sdp, roomId, socket.id);
+      this.roomManager.onOffer(roomId.toString(), sdp, socket.id);
     });
 
     socket.on("answer", ({ sdp, roomId }: { sdp: string, roomId: string }) => {
-      this.roomManager.onAnswer(sdp, roomId, socket.id);
+      this.roomManager.onAnswer(roomId.toString(), sdp, socket.id);
     });
 
     socket.on("ice-candidate", ({ candidate, roomId }: { candidate: IceCandidatePayload, roomId: string }) => {

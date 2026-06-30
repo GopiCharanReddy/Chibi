@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer } from "node:http";
 import { Server, Socket } from "socket.io";
+import { UserManager } from "./managers/UserManager.js";
 
 const app = express();
 const server = createServer(app);
@@ -10,18 +11,19 @@ const io = new Server(server, {
   }
 });
 
+const userManager = new UserManager();
 io.on("connection", (socket: Socket) => {
   console.log("User connected with ID: ", socket.id);
+  const name = socket.handshake.query.name as string || "Anonymous";
 
-  socket.on("chat-message", (data: string) => {
-    console.log("Message received: ", data);
+  userManager.addUser(name, socket);
+  
+  socket.on("disconnect", (reason) => {
+    console.log("User disconnected, Reason: ", reason);
 
-    io.emit("chat-message", data);
+    userManager.removeUser(socket.id);
   });
-})
 
-io.on("disconnect", (reason) => {
-  console.log("User disconnected, Reason: ", reason);
 });
 
 server.listen(8000, () => {
