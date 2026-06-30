@@ -1,0 +1,79 @@
+import type { Socket } from "socket.io";
+import { RoomManager } from "./roomManager.js";
+
+export interface User {
+  name: string,
+  socket: Socket
+}
+
+export interface IceCandidatePayload {
+  candidate: string,
+  sdpMid: string | null,
+  sdpMLineIndex: string | null,
+  usernameFragment?: string | null
+}
+
+
+export class UserManager {
+  private users: User[];
+  private queue: string[];
+  private roomManager: RoomManager;
+  constructor() {
+    this.users = [];
+    this.queue = [];
+    this.roomManager = new RoomManager();
+  }
+
+  addUser({ name, socket }: User) {
+    this.users.push({
+      name,
+      socket
+    });
+    this.queue.push(socket.id);
+    this.initHandlers(socket);
+    this.clearQueue();
+  }
+
+  removeUser(socketId: string) {
+    this.users = this.users.filter((user: User) => user.socket.id !== socketId);
+    this.queue = this.queue.filter((id: string) => id !== socketId);
+
+    this.roomManager.handleDisconnect(socketId);
+  }
+
+  getUser(socketId: string): User | undefined {
+    return this.users.find(user => user.socket.id === socketId);
+  }
+
+  clearQueue() {
+    if (this.queue.length < 2) return;
+
+    const id1 = this.queue.shift();
+    const id2 = this.queue.shift();
+
+    if (!id1 || !id2) return;
+
+    const user1 = this.getUser(id1);
+    const user2 = this.getUser(id2);
+    if (!user1 || !user2) {
+      if (user1) this.queue.unshift(id1);
+      if (user2) this.queue.unshift(id2);
+      return;
+    }
+    this.roomManager.createRoom(user1, user2);
+  }
+
+  initHandlers(socket: Socket) {
+    socket.on("offer", ({ sdp, roomId }: { sdp: string, roomId: string }) => {
+      this.roomManager.onOffer(sdp, roomId, socket.id);
+    });
+
+    socket.on("answer", ({ sdp, roomId }: { sdp: string, roomId: string }) => {
+      this.roomManager.onAnswer(sdp, roomId, socket.id);
+    });
+
+    socket.on("ice-candidate", ({ candidate, roomId }: { candidate: IceCandidatePayload, roomId: string }) => {
+      this.roomManager.onIceCandidate(roomId, candidate, socket.id);
+    })
+  }
+}
