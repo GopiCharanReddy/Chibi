@@ -59,7 +59,7 @@ export class RoomManager {
 
   handleDisconnect(socketId: string) {
     for (const [roomId, room] of this.rooms.entries()) {
-      if (room.user1.socket.id === socketId || room.user2.socket.id == socketId) {
+      if (room.user1.socket.id === socketId || room.user2.socket.id === socketId) {
         const partner = room.user1.socket.id === socketId ? room.user2 : room.user1;
         console.log("Lobby disconnected");
         partner.socket.emit("lobby-disconnected");
@@ -74,12 +74,15 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    const targetUser = room.user1.socket.id == socketId ? room.user2 : room.user1;
+    const isUser1 = room.user1.socket.id === socketId;
+    const targetUser = isUser1 ? room.user2 : room.user1;
+    const senderType = isUser1 ? "sender" : "receiver";
     console.log("candidate iced");
     // forward the ICE candidate directly to peer
     targetUser.socket.emit("ice-candidate", {
       candidate,
-      roomId
+      roomId,
+      type: senderType
     });
   }
 }

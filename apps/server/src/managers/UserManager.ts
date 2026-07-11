@@ -77,6 +77,13 @@ export class UserManager {
 
     socket.on("ice-candidate", ({ candidate, roomId }: { candidate: IceCandidatePayload, roomId: string }) => {
       this.roomManager.onIceCandidate(roomId, candidate, socket.id);
-    })
+    });
+
+    socket.on("skip", () => {
+      this.roomManager.handleDisconnect(socket.id);
+      this.queue = this.queue.filter(id => id !== socket.id);
+      this.queue.push(socket.id);
+      this.clearQueue();
+    });
   }
 }

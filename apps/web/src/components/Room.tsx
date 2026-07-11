@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { Socket, io } from 'socket.io-client';
 
 const URL = "http://localhost:8000";
@@ -13,30 +12,38 @@ const Room = ({
   localAudioTrack: MediaStreamTrack,
   localVideoTrack: MediaStreamTrack
 }) => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  // const [socket, setSocket] = useState<Socket | null>(null);
   const socketRef = useRef<Socket | null>(null);
-  const [lobby, setLobby] = useState(true);
-  const [sendingPc, setSendingPc] = useState<RTCPeerConnection | null>();
-  const [receivingPc, setReceivingPc] = useState<RTCPeerConnection | null>();
-  const [remoteMediaStream, setRemoteMediaStream] = useState<MediaStream | null>();
-  // const [remoteVideoTrack, setRemoteVideoTrack] = useState<MediaStreamTrack | null>();
-  // const [remoteAudioTrack, setRemoteAudioTrack] = useState<MediaStreamTrack | null>();
+  const [status, setStatus] = useState<'lobby' | 'connected' | 'disconnected'>('lobby');
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    const socket = io(URL);
+    // Initialize socket with the user's name
+    const socket = io(URL, { query: { name } });
     socketRef.current = socket;
 
     socket.on("send-offer", async ({ roomId }) => {
-      setLobby(false);
+      setStatus('connected');
       const pc = new RTCPeerConnection();
-      setSendingPc(pc);
+      pcRef.current = pc;
 
-      // add local tracks
+      // Add local tracks to send to the peer
       if (localAudioTrack) pc.addTrack(localAudioTrack);
       if (localVideoTrack) pc.addTrack(localVideoTrack);
+
+      pc.ontrack = ({ track }) => {
+        if (remoteVideoRef.current) {
+          let stream = remoteVideoRef.current.srcObject as MediaStream | null;
+          if (!stream) {
+            stream = new MediaStream();
+            remoteVideoRef.current.srcObject = stream;
+          }
+          stream.addTrack(track);
+          remoteVideoRef.current.play().catch(console.error);
+        }
+      };
 
       pc.onicecandidate = async (event) => {
         if (event.candidate) {
@@ -46,18 +53,36 @@ const Room = ({
           });
         }
       }
+
       const sdp = await pc.createOffer();
       await pc.setLocalDescription(sdp);
       socket.emit("offer", {
         sdp,
         roomId
-      })
+      });
     });
 
-    socket.on("offer", async ({ offerSdp, roomId }) => {
-      setLobby(false);
+    socket.on("offer", async ({ sdp, roomId }) => {
+      setStatus('connected');
       const pc = new RTCPeerConnection();
-      setReceivingPc(pc);
+      pcRef.current = pc;
+
+      // Add local tracks to send to the peer
+      if (localAudioTrack) pc.addTrack(localAudioTrack);
+      if (localVideoTrack) pc.addTrack(localVideoTrack);
+
+      pc.ontrack = ({ track }) => {
+        if (remoteVideoRef.current) {
+          let stream = remoteVideoRef.current.srcObject as MediaStream | null;
+          if (!stream) {
+            stream = new MediaStream();
+            remoteVideoRef.current.srcObject = stream;
+          }
+          stream.addTrack(track);
+          remoteVideoRef.current.play().catch(console.error);
+        }
+      };
+
       pc.onicecandidate = async (event) => {
         if (event.candidate) {
           socket.emit("ice-candidate", {
@@ -66,38 +91,51 @@ const Room = ({
           });
         }
       }
-      await pc.setRemoteDescription({ sdp: offerSdp, type: "offer" });
 
-      const sdp = await pc.createAnswer();
-
-      pc.ontrack = ({ track }) => {
-        const stream = new MediaStream([track]);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
-          remoteVideoRef.current.play().catch(console.error);
-        }
-        setRemoteMediaStream(stream);
-      }
+      await pc.setRemoteDescription({ sdp, type: "offer" });
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", {
-        sdp,
+        sdp: answer.sdp,
         roomId
       });
     });
 
-    socket.on("answer", ({ roomId, answer }) => {
-      if (sendingPc) {
-        sendingPc.setRemoteDescription({ sdp: answer, type: "answer" }).catch(console.error);
+    socket.on("answer", ({ sdp }) => {
+      if (pcRef.current) {
+        pcRef.current.setRemoteDescription({ sdp, type: "answer" }).catch(console.error);
       }
-      alert("connection done");
     });
 
     socket.on("lobby", () => {
-      setLobby(true);
-    })
-  }, [name, localAudioTrack, localVideoTrack, sendingPc]);
+      setStatus('lobby');
+    });
+
+    socket.on("lobby-disconnected", () => {
+      setStatus('disconnected');
+      if (pcRef.current) {
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+    });
+
+    socket.on("ice-candidate", async ({ candidate }) => {
+      if (pcRef.current) {
+        await pcRef.current.addIceCandidate(candidate).catch(console.error);
+      }
+    });
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+      if (pcRef.current) pcRef.current.close();
+    }
+  }, [name, localAudioTrack, localVideoTrack]);
 
   useEffect(() => {
     if (localVideoRef.current && localVideoTrack) {
@@ -107,17 +145,32 @@ const Room = ({
     }
   }, [localAudioTrack, localVideoTrack]);
 
-  if (lobby) {
-    return (
-      <div>
-        Waiting to connect you to someone
-      </div>
-    )
-  }
+  const handleNext = () => {
+    if (socketRef.current) {
+      socketRef.current.emit("skip");
+    }
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    setStatus('lobby');
+  };
+
   return (
     <>
       <div>Hi {name}</div>
-      <video width={400} height={400} ref={localVideoRef} autoPlay muted />
+      <video width={400} height={400} ref={localVideoRef} autoPlay muted style={{ transform: "scaleX(-1)" }} />
+      
+      {status === 'lobby' && <div>Waiting to connect to someone...</div>}
+      {status === 'disconnected' && <div>Stranger disconnected. Click Next to find a new person.</div>}
+      
+      <div style={{ marginTop: 20 }}>
+        <button onClick={handleNext}>Next</button>
+      </div>
+      
       <video width={400} height={400} ref={remoteVideoRef} autoPlay />
     </>
   )
