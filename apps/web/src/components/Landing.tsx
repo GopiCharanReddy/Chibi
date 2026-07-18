@@ -10,6 +10,10 @@ const Landing = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
+
+    let currentAudioTrack: MediaStreamTrack | null = null;
+    let currentVideoTrack: MediaStreamTrack | null = null;
+
     const getCam = async () => {
       try {
         const stream = await window.navigator.mediaDevices.getUserMedia({
@@ -17,14 +21,14 @@ const Landing = () => {
           audio: true
         });
 
-        const audioTrack = stream.getAudioTracks()[0];
-        const videoTrack = stream.getVideoTracks()[0];
-        setLocalAudioTrack(audioTrack);
-        setLocalVideoTrack(videoTrack);
+        currentAudioTrack = stream.getAudioTracks()[0];
+        currentVideoTrack = stream.getVideoTracks()[0];
+        setLocalAudioTrack(currentAudioTrack);
+        setLocalVideoTrack(currentVideoTrack);
         if (videoRef.current) {
           const stream2 = new MediaStream();
-          stream2.addTrack(videoTrack);
-          videoRef.current.srcObject = new MediaStream([videoTrack]);
+          stream2.addTrack(currentVideoTrack);
+          videoRef.current.srcObject = new MediaStream([currentVideoTrack]);
           videoRef.current.play();
         }
       } catch (error) {
@@ -34,10 +38,10 @@ const Landing = () => {
     getCam();
 
     return () => {
-      localAudioTrack?.stop();
-      localVideoTrack?.stop();
+      currentAudioTrack?.stop();
+      currentVideoTrack?.stop();
     }
-  }, []);
+  }, [setLocalAudioTrack, setLocalVideoTrack]);
   const handleClick = () => {
     if (!name.trim()) {
       alert("Please enter a name first: ");

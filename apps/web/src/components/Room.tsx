@@ -19,19 +19,32 @@ const Room = ({
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
+  const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
+  const isRemoteDescriptionSet = useRef<boolean>(false);
+
   useEffect(() => {
     // Initialize socket with the user's name
     const socket = io(URL, { query: { name } });
     socketRef.current = socket;
 
+    const resetConnectionState = () => {
+      if (pcRef.current) {
+        pcRef.current.close();
+      }
+      pcRef.current = null;
+      iceCandidateQueue.current = [];
+      isRemoteDescriptionSet.current = false;
+    }
+
     socket.on("send-offer", async ({ roomId }) => {
+      resetConnectionState();
       setStatus('connected');
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
       // Add local tracks to send to the peer
-      if (localAudioTrack) pc.addTrack(localAudioTrack);
-      if (localVideoTrack) pc.addTrack(localVideoTrack);
+      if (localAudioTrack) pc.addTrack(localAudioTrack, new MediaStream([localAudioTrack]));
+      if (localVideoTrack) pc.addTrack(localVideoTrack, new MediaStream([localVideoTrack]));
 
       pc.ontrack = ({ track }) => {
         if (remoteVideoRef.current) {
@@ -63,6 +76,7 @@ const Room = ({
     });
 
     socket.on("offer", async ({ sdp, roomId }) => {
+      resetConnectionState();
       setStatus('connected');
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
@@ -92,7 +106,13 @@ const Room = ({
         }
       }
 
-      await pc.setRemoteDescription({ sdp, type: "offer" });
+      await pc.setRemoteDescription({ sdp: sdp.sdp, type: "offer" });
+      isRemoteDescriptionSet.current = true;
+
+      for (const candidate of iceCandidateQueue.current) {
+        await pc.addIceCandidate(candidate).catch(console.error);
+      }
+      iceCandidateQueue.current = [];
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
@@ -102,17 +122,25 @@ const Room = ({
       });
     });
 
-    socket.on("answer", ({ sdp }) => {
+    socket.on("answer", async ({ sdp }) => {
       if (pcRef.current) {
-        pcRef.current.setRemoteDescription({ sdp, type: "answer" }).catch(console.error);
+        await pcRef.current.setRemoteDescription({ sdp, type: "answer" }).catch(console.error);
+        isRemoteDescriptionSet.current = true;
+
+        for (const candidate of iceCandidateQueue.current) {
+          await pcRef.current.addIceCandidate(candidate).catch(console.error);
+        }
+        iceCandidateQueue.current = [];
       }
     });
 
     socket.on("lobby", () => {
+      resetConnectionState();
       setStatus('lobby');
     });
 
     socket.on("lobby-disconnected", () => {
+      resetConnectionState();
       setStatus('disconnected');
       if (pcRef.current) {
         pcRef.current.close();
@@ -124,8 +152,10 @@ const Room = ({
     });
 
     socket.on("ice-candidate", async ({ candidate }) => {
-      if (pcRef.current) {
+      if (pcRef.current && isRemoteDescriptionSet.current) {
         await pcRef.current.addIceCandidate(candidate).catch(console.error);
+      } else {
+        iceCandidateQueue.current.push(candidate);
       }
     });
 
@@ -163,15 +193,14 @@ const Room = ({
     <>
       <div>Hi {name}</div>
       <video width={400} height={400} ref={localVideoRef} autoPlay muted style={{ transform: "scaleX(-1)" }} />
-      
       {status === 'lobby' && <div>Waiting to connect to someone...</div>}
       {status === 'disconnected' && <div>Stranger disconnected. Click Next to find a new person.</div>}
-      
+
       <div style={{ marginTop: 20 }}>
         <button onClick={handleNext}>Next</button>
       </div>
-      
-      <video width={400} height={400} ref={remoteVideoRef} autoPlay />
+
+      <video width={400} height={400} ref={remoteVideoRef} autoPlay muted style={{ transform: "scaleX(-1)" }} />
     </>
   )
 }

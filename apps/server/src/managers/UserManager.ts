@@ -9,7 +9,7 @@ export interface User {
 export interface IceCandidatePayload {
   candidate: string,
   sdpMid: string | null,
-  sdpMLineIndex: string | null,
+  sdpMLineIndex: number | null,
   usernameFragment?: string | null
 }
 
@@ -49,21 +49,22 @@ export class UserManager {
     console.log('inside clear queues');
     console.log(this.queue.length);
     if (this.queue.length < 2) return;
+    while (this.queue.length >= 2) {
+      const id1 = this.queue.shift();
+      const id2 = this.queue.shift();
 
-    const id1 = this.queue.shift();
-    const id2 = this.queue.shift();
+      if (!id1 || !id2) return;
 
-    if (!id1 || !id2) return;
+      const user1 = this.getUser(id1);
+      const user2 = this.getUser(id2);
 
-    const user1 = this.getUser(id1);
-    const user2 = this.getUser(id2);
-
-    if (!user1 || !user2) {
-      if (user1) this.queue.unshift(id1);
-      if (user2) this.queue.unshift(id2);
-      return;
+      if (!user1 || !user2) {
+        if (user1) this.queue.unshift(id1);
+        if (user2) this.queue.unshift(id2);
+        continue;
+      }
+      this.roomManager.createRoom(user1, user2);
     }
-    this.roomManager.createRoom(user1, user2);
   }
 
   initHandlers(socket: Socket) {
